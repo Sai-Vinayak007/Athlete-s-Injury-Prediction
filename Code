@@ -1,41 +1,94 @@
 import pandas as pd
+import numpy as np
+from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split
-from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, classification_report
-import joblib
+from sklearn.metrics import confusion_matrix
+
+import os 
+print ( os . listdir()) 
+
+file_name = "cleaned_football_injury_dataset.csv"
+df = pd.read_csv(file_name)
+
+print("Dataset Loaded:", file_name)
+print("Columns:", df.columns)
 
 
-df = pd.read_csv('football_injury_dataset.csv')
+df.columns = df.columns.str.strip()
 
 
-X = df.drop('injury', axis=1)
-y = df['injury']
+possible_targets = ['injury', 'Injury', 'Injury_Risk', 'risk', 'target']
 
+target_col = None
+for col in possible_targets:
+    if col in df.columns:
+        target_col = col
+        break
+
+if target_col is None:
+    raise Exception("❌ Target column not found!")
+
+print("Target Column:", target_col)
+
+
+df = df.dropna()
+
+
+y = df[target_col]
+X = df.drop(target_col, axis=1)
+
+
+for col in X.columns:
+    if 'id' in col.lower():
+        X = X.drop(col, axis=1)
+
+
+X = pd.get_dummies(X)
+
+
+if y.dtype == 'object':
+    le = LabelEncoder()
+    y = le.fit_transform(y)
+else:
+    le = None
+
+
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42
+)
 
 scaler = StandardScaler()
-X_scaled = scaler.fit_transform(X)
 
-
-X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size=0.2, random_state=42)
-
+X_train = scaler.fit_transform(X_train)  
+X_test = scaler.transform(X_test)        
 
 model = RandomForestClassifier(n_estimators=100, random_state=42)
 model.fit(X_train, y_train)
 
 
+
 y_pred = model.predict(X_test)
-accuracy = accuracy_score(y_test, y_pred)
-report = classification_report(y_test, y_pred)
 
-print(f"Model Accuracy: {accuracy * 100:.2f}%\n")
-print("Classification Report:\n", report)
+print(f"\n✅ Accuracy: {accuracy_score(y_test, y_pred)*100:.2f}%")
+print("\nClassification Report:\n", classification_report(y_test, y_pred))
+
+print(confusion_matrix(y_test, y_pred))
+
+importance = pd.Series(model.feature_importances_, index=X.columns)
+print(importance.sort_values(ascending=False))
 
 
-joblib.dump(model, 'injury_prediction_model.pkl')
-joblib.dump(scaler, 'feature_scaler.pkl')
-risk_labels = ['Low', 'High']
-y_pred_labels = [risk_labels[i] for i in y_pred]
+if le:
+    y_pred_labels = le.inverse_transform(y_pred)
+else:
+    y_pred_labels = y_pred
 
-for i in range(10):
-    print(f"Predicted Injury Risk for Player {i+1}: {y_pred_labels[i]}")
+print(df.corr(numeric_only=True)['Injury'].sort_values(ascending=False))
+
+print("\nSample Predictions:")
+for i in range(min(10, len(y_pred_labels))):
+    print(f"Player {i+1}: {y_pred_labels[i]}")
